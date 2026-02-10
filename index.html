@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>门诊空间效能仿真系统 Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --glass-bg: rgba(255, 255, 255, 0.45);
+            --glass-border: rgba(255, 255, 255, 0.6);
+            --glass-shadow: 0 8px 32px 0 rgba(100, 100, 200, 0.15);
+            --primary-purple: #8b5cf6;
+        }
+
+        body {
+            font-family: 'Inter', 'Noto Sans SC', sans-serif;
+            background: linear-gradient(135deg, #e0e7ff 0%, #f3e8ff 50%, #ddd6fe 100%);
+            background-size: 400% 400%;
+            animation: gradientBG 15s ease infinite;
+            color: #334155;
+        }
+
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        /* Glassmorphism Utilities */
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            box-shadow: var(--glass-shadow);
+        }
+
+        .glass-input {
+            background: rgba(255, 255, 255, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            transition: all 0.2s;
+        }
+        .glass-input:focus {
+            background: rgba(255, 255, 255, 0.9);
+            border-color: var(--primary-purple);
+            box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+        }
+
+        .glass-btn {
+            background: rgba(255, 255, 255, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(4px);
+            transition: all 0.2s;
+        }
+        .glass-btn:hover {
+            background: rgba(255, 255, 255, 0.8);
+            transform: translateY(-1px);
+        }
+        .glass-btn:active {
+            transform: translateY(0);
+        }
+
+        /* Canvas & Layout */
+        .canvas-bg {
+            background-image: 
+                radial-gradient(rgba(139, 92, 246, 0.2) 1px, transparent 1px),
+                radial-gradient(rgba(139, 92, 246, 0.1) 1px, transparent 1px);
+            background-size: 20px 20px, 100px 100px;
+            background-position: 0 0, 0 0;
+        }
+
+        /* Transitions */
+        .panel-transition {
+            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.05); }
+        ::-webkit-scrollbar-thumb { background: rgba(139, 92, 246, 0.3); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(139, 92, 246, 0.6); }
+
+        .collapsed-text {
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden text-sm">
+
+    <!-- Header -->
+    <header class="h-16 glass-panel z-50 flex items-center justify-between px-6 mx-4 mt-4 rounded-2xl relative">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-xl flex items-center justify-center text-white font-bold shadow-lg shadow-purple-200">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold text-gray-800 tracking-tight">门诊效能仿真 Pro</h1>
+                <p class="text-[10px] text-gray-500 font-medium">Outpatient Space Efficiency Simulation (DES)</p>
+            </div>
+        </div>
+
+        <!-- Simulation Controls -->
+        <div class="absolute left-1/2 transform -translate-x-1/2 flex items-center gap-2 bg-white/40 p-1.5 rounded-xl border border-white/50 backdrop-blur-md shadow-sm">
+            <button onclick="toggleSimulation()" id="btnPlayPause" class="w-10 h-10 flex items-center justify-center rounded-lg bg-white shadow-sm text-purple-600 hover:text-purple-700 hover:bg-purple-50 transition-colors">
+                <svg id="iconPlay" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" /></svg>
+                <svg id="iconPause" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 hidden" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+            </button>
+            <div class="h-6 w-px bg-gray-300 mx-1"></div>
+            <button onclick="changeSpeed(0.5)" class="px-3 py-1.5 text-xs font-semibold rounded-lg hover:bg-white/50 text-gray-600 transition">x0.5</button>
+            <button onclick="changeSpeed(1)" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-purple-100 text-purple-700 transition" id="speed1">x1</button>
+            <button onclick="changeSpeed(5)" class="px-3 py-1.5 text-xs font-semibold rounded-lg hover:bg-white/50 text-gray-600 transition" id="speed5">x5</button>
+            <button onclick="changeSpeed(20)" class="px-3 py-1.5 text-xs font-semibold rounded-lg hover:bg-white/50 text-gray-600 transition" id="speed20">x20</button>
+            <div class="h-6 w-px bg-gray-300 mx-1"></div>
+            <div class="px-3 text-xs font-mono text-purple-800" id="simTimeDisplay">00:00</div>
+        </div>
+
+        <div class="flex gap-3">
+            <button onclick="resetSimulation()" class="glass-btn px-4 py-2 rounded-lg text-xs font-semibold text-gray-600 flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                重置
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Body -->
+    <main class="flex-1 flex overflow-hidden p-4 gap-4 relative">
+
+        <!-- Left Panel: Parameters -->
+        <div id="leftPanel" class="w-80 glass-panel rounded-2xl flex flex-col panel-transition relative z-20">
+            <button onclick="togglePanel('left')" class="absolute -right-3 top-1/2 transform -translate-y-1/2 w-6 h-12 bg-white rounded-full shadow-md flex items-center justify-center border border-gray-100 cursor-pointer hover:bg-purple-50 z-30 group">
+                <svg id="leftToggleIcon" xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-gray-500 group-hover:text-purple-600" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+            </button>
+            
+            <div class="p-5 border-b border-white/40 flex-shrink-0 panel-content">
+                <h2 class="text-sm font-bold text-gray-800 flex items-center gap-2">
+                    <span class="w-1.5 h-4 bg-purple-500 rounded-full"></span> 
+                    输入参数配置
+                </h2>
+            </div>
+            
+            <div class="overflow-y-auto flex-1 p-5 space-y-6 panel-content">
+                <!-- Group 1 -->
+                <div class="bg-white/40 p-4 rounded-xl border border-white/50">
+                    <h3 class="text-xs font-bold text-gray-500 uppercase mb-3">流量设定 (Flow)</h3>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-[10px] text-gray-500 font-semibold mb-1">设计日门诊量 (人次)</label>
+                            <input type="number" id="dailyFlow" value="2000" class="w-full glass-input rounded-lg px-3 py-2 text-sm text-gray-700 font-medium outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] text-gray-500 font-semibold mb-1">运行时长 (固定8小时)</label>
+                            <input type="number" value="8" disabled class="w-full bg-gray-100/50 border border-transparent rounded-lg px-3 py-2 text-sm text-gray-400 font-medium cursor-not-allowed">
+                        </div>
+                         <div>
+                            <label class="block text-[10px] text-gray-500 font-semibold mb-1">复诊/二次回流率 (%)</label>
+                            <input type="number" id="returnRate" value="30" class="w-full glass-input rounded-lg px-3 py-2 text-sm text-gray-700 font-medium outline-none">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Group 2 -->
+                <div class="bg-white/40 p-4 rounded-xl border border-white/50">
+                    <h3 class="text-xs font-bold text-gray-500 uppercase mb-3">医疗资源 (Resources)</h3>
+                    <div class="space-y-3">
+                        <div class="flex gap-2">
+                            <div class="flex-1">
+                                <label class="block text-[10px] text-gray-500 mb-1">挂号窗口</label>
+                                <input type="number" id="res_reg" value="6" class="w-full glass-input rounded-lg px-2 py-1.5 text-sm">
+                            </div>
+                            <div class="flex-1">
+                                <label class="block text-[10px] text-gray-500 mb-1">耗时(分)</label>
+                                <input type="number" id="time_reg" value="2" step="0.5" class="w-full glass-input rounded-lg px-2 py-1.5 text-sm">
+                            </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <div class="flex-1">
+                                <label class="block text-[10px] text-gray-500 mb-1">诊室数量</label>
+                                <input type="number" id="res_doc" value="20" class="w-full glass-input rounded-lg px-2 py-1.5 text-sm">
+                            </div>
+                            <div class="flex-1">
+                                <label class="block text-[10px] text-gray-500 mb-1">看诊(分)</label>
+                                <input type="number" id="time_doc" value="10" class="w-full glass-input rounded-lg px-2 py-1.5 text-sm">
+                            </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <div class="flex-1">
+                                <label class="block text-[10px] text-gray-500 mb-1">收费窗口</label>
+                                <input type="number" id="res_phar" value="5" class="w-full glass-input rounded-lg px-2 py-1.5 text-sm">
+                            </div>
+                            <div class="flex-1">
+                                <label class="block text-[10px] text-gray-500 mb-1">耗时(分)</label>
+                                <input type="number" id="time_phar" value="3" class="w-full glass-input rounded-lg px-2 py-1.5 text-sm">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+             <!-- Collapsed Label -->
+             <div class="hidden absolute inset-0 flex items-center justify-center collapsed-content opacity-0 transition-opacity duration-300">
+                <span class="collapsed-text font-bold text-gray-400 tracking-widest text-xs uppercase">Parameters</span>
+            </div>
+        </div>
+
+        <!-- Center: Canvas -->
+        <div class="flex-1 glass-panel rounded-2xl flex flex-col relative overflow-hidden z-10">
+            <!-- Canvas Overlay UI -->
+            <div class="absolute top-4 left-4 z-10 flex gap-2">
+                <div class="bg-white/80 backdrop-blur px-3 py-1.5 rounded-full text-[10px] font-bold text-gray-500 border border-white shadow-sm flex items-center gap-2">
+                   <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                   <span>拖动画布平移 (Drag to Pan)</span>
+                </div>
+            </div>
+            
+            <div class="flex-1 relative cursor-move bg-white/30 canvas-bg" id="canvasWrapper">
+                <canvas id="simCanvas" class="absolute top-0 left-0 block"></canvas>
+            </div>
+        </div>
+
+        <!-- Right Panel: Stats -->
+        <div id="rightPanel" class="w-96 glass-panel rounded-2xl flex flex-col panel-transition relative z-20">
+             <button onclick="togglePanel('right')" class="absolute -left-3 top-1/2 transform -translate-y-1/2 w-6 h-12 bg-white rounded-full shadow-md flex items-center justify-center border border-gray-100 cursor-pointer hover:bg-purple-50 z-30 group">
+                <svg id="rightToggleIcon" xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-gray-500 group-hover:text-purple-600" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" /></svg>
+            </button>
+
+            <div class="p-5 border-b border-white/40 flex-shrink-0 panel-content">
+                <h2 class="text-sm font-bold text-gray-800 flex items-center gap-2">
+                    <span class="w-1.5 h-4 bg-pink-500 rounded-full"></span> 
+                    实时统计看板
+                </h2>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-2 panel-content">
+                <!-- Chart Section -->
+                <div class="bg-white/50 p-3 rounded-xl border border-white/60 mb-4 shadow-sm">
+                    <h3 class="text-[10px] font-bold text-gray-400 uppercase mb-2 tracking-wider">实时排队趋势 (Queue Length)</h3>
+                    <div class="h-40 w-full relative">
+                        <canvas id="queueChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Stats Cards -->
+                <div class="grid grid-cols-2 gap-3 mb-4">
+                    <div class="bg-indigo-50/80 p-3 rounded-xl border border-indigo-100">
+                        <div class="text-[10px] text-indigo-400 font-bold uppercase">在院总人数</div>
+                        <div class="text-xl font-bold text-indigo-700" id="live_total_patients">0</div>
+                    </div>
+                    <div class="bg-purple-50/80 p-3 rounded-xl border border-purple-100">
+                        <div class="text-[10px] text-purple-400 font-bold uppercase">完成治疗</div>
+                        <div class="text-xl font-bold text-purple-700" id="live_finished">0</div>
+                    </div>
+                </div>
+
+                <!-- Live Table -->
+                <div class="bg-white/50 rounded-xl border border-white/60 overflow-hidden shadow-sm">
+                    <table class="w-full text-xs text-left">
+                        <thead class="bg-gray-50/50 text-gray-500 font-semibold border-b border-gray-100">
+                            <tr>
+                                <th class="py-2.5 px-3">区域节点</th>
+                                <th class="py-2.5 px-3 text-right">当前排队</th>
+                                <th class="py-2.5 px-3 text-right">峰值</th>
+                                <th class="py-2.5 px-3 text-right">利用率</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100 text-gray-600" id="liveTableBody">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="mt-4 p-3 bg-yellow-50/50 rounded-xl border border-yellow-100 text-[10px] text-yellow-700">
+                    <strong>设计建议：</strong> <span id="designHint">仿真进行中...</span>
+                </div>
+            </div>
+
+             <!-- Collapsed Label -->
+             <div class="hidden absolute inset-0 flex items-center justify-center collapsed-content opacity-0 transition-opacity duration-300">
+                <span class="collapsed-text font-bold text-gray-400 tracking-widest text-xs uppercase">Statistics</span>
+            </div>
+        </div>
+
+    </main>
+
+<script>
+// ---------------- 核心全局变量 ----------------
+const CONFIG = {
+    canvasPadding: 50,
+    nodeRadius: 30,
+    patientRadius: 5,
+    pixelsPerMeter: 3, // 比例尺
+    maxTime: 8 * 60, // 8小时 (分钟)
+};
+
+const NODES = {
+    ENTRANCE: { x: 100, y: 350, label: '入口大厅', color: '#94a3b8', type: 'entry' },
+    REGISTRATION: { x: 350, y: 150, label: '挂号/自助', color: '#60a5fa', type: 'service' },
+    WAITING: { x: 400, y: 500, label: '综合候诊', color: '#fbbf24', type: 'queue' },
+    CONSULTATION: { x: 650, y: 500, label: '诊室群', color: '#34d399', type: 'service' },
+    PHARMACY: { x: 850, y: 250, label: '收费/取药', color: '#a78bfa', type: 'service' },
+    EXIT: { x: 1100, y: 350, label: '离院', color: '#cbd5e1', type: 'exit' }
+};
+
+// 摄像机/画布平移状态
+let camera = { x: 0, y: 0, scale: 1, isDragging: false, startX: 0, startY: 0 };
+
+let simulation = {
+    running: false,
+    paused: false,
+    speed: 1,
+    time: 0, // 当前仿真时间 (分钟)
+    patients: [],
+    resources: {},
+    stats: {
+        totalFinished: 0,
+        peakQueue: { REGISTRATION: 0, WAITING: 0, PHARMACY: 0 },
+        history: { time: [], q_reg: [], q_wait: [], q_phar: [] } // Chart Data
+    }
+};
+
+let chartInstance = null;
+let animationFrameId;
+
+// ---------------- 初始化 ----------------
+const canvas = document.getElementById('simCanvas');
+const ctx = canvas.getContext('2d');
+const canvasWrapper = document.getElementById('canvasWrapper');
+
+// Chart.js Setup
+function initChart() {
+    const ctxChart = document.getElementById('queueChart').getContext('2d');
+    chartInstance = new Chart(ctxChart, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [
+                { label: '挂号', borderColor: '#60a5fa', borderWidth: 1.5, data: [], pointRadius: 0, tension: 0.4 },
+                { label: '候诊', borderColor: '#fbbf24', borderWidth: 1.5, data: [], pointRadius: 0, tension: 0.4 },
+                { label: '取药', borderColor: '#a78bfa', borderWidth: 1.5, data: [], pointRadius: 0, tension: 0.4 }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false, // 禁用动画以提高实时性能
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { display: false },
+                y: { grid: { color: 'rgba(0,0,0,0.05)' }, beginAtZero: true }
+            }
+        }
+    });
+}
+
+function resizeCanvas() {
+    canvas.width = canvasWrapper.clientWidth;
+    canvas.height = canvasWrapper.clientHeight;
+    drawFrame();
+}
+window.addEventListener('resize', resizeCanvas);
+
+// Canvas Panning Interaction
+canvasWrapper.addEventListener('mousedown', e => {
+    camera.isDragging = true;
+    camera.startX = e.clientX - camera.x;
+    camera.startY = e.clientY - camera.y;
+    canvasWrapper.style.cursor = 'grabbing';
+});
+window.addEventListener('mouseup', () => {
+    camera.isDragging = false;
+    canvasWrapper.style.cursor = 'move';
+});
+window.addEventListener('mousemove', e => {
+    if (camera.isDragging) {
+        camera.x = e.clientX - camera.startX;
+        camera.y = e.clientY - camera.startY;
+        if (!simulation.running) drawFrame(); // Redraw if paused/stopped
+    }
+});
+
+// UI: Panel Toggling
+function togglePanel(side) {
+    const panel = document.getElementById(`${side}Panel`);
+    const isLeft = side === 'left';
+    const icon = document.getElementById(`${side}ToggleIcon`);
+    const content = panel.querySelectorAll('.panel-content');
+    const collapsedLabel = panel.querySelector('.collapsed-content');
+
+    if (panel.classList.contains('w-12')) {
+        // Expand
+        panel.classList.remove('w-12');
+        panel.classList.add(isLeft ? 'w-80' : 'w-96');
+        content.forEach(el => el.classList.remove('hidden'));
+        collapsedLabel.classList.add('hidden');
+        collapsedLabel.classList.remove('opacity-100');
+        icon.innerHTML = isLeft 
+            ? '<path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />' 
+            : '<path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />';
+    } else {
+        // Collapse
+        panel.classList.remove(isLeft ? 'w-80' : 'w-96');
+        panel.classList.add('w-12');
+        content.forEach(el => el.classList.add('hidden'));
+        collapsedLabel.classList.remove('hidden');
+        setTimeout(() => collapsedLabel.classList.add('opacity-100'), 50);
+        icon.innerHTML = isLeft 
+            ? '<path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />' 
+            : '<path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />';
+    }
+    setTimeout(resizeCanvas, 400); // Resize canvas after transition
+}
+
+// ---------------- 仿真逻辑 ----------------
+
+class Patient {
+    constructor(id) {
+        this.id = id;
+        this.x = NODES.ENTRANCE.x;
+        this.y = NODES.ENTRANCE.y;
+        this.targetNode = 'REGISTRATION';
+        this.state = 'walking'; 
+        this.startTime = simulation.time;
+        this.isReturnVisit = Math.random() < (parseFloat(document.getElementById('returnRate').value) / 100);
+        this.hasSeenDoctor = false;
+        
+        // Random visual offset so they don't stack perfectly
+        this.offsetX = (Math.random() - 0.5) * 15;
+        this.offsetY = (Math.random() - 0.5) * 15;
+    }
+
+    update(dt) {
+        if (this.state === 'finished') return;
+
+        if (this.state === 'walking') {
+            const target = NODES[this.targetNode];
+            const tx = target.x + this.offsetX;
+            const ty = target.y + this.offsetY;
+            const dx = tx - this.x;
+            const dy = ty - this.y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            const speed = 120 * dt; // Speed pixel/min
+
+            if (dist < 5) {
+                this.x = tx;
+                this.y = ty;
+                this.arrive();
+            } else {
+                this.x += (dx / dist) * speed;
+                this.y += (dy / dist) * speed;
+            }
+        }
+    }
+
+    arrive() {
+        if (this.targetNode === 'REGISTRATION') {
+            simulation.resources.REGISTRATION.queue.push(this);
+            this.state = 'waiting';
+        } else if (this.targetNode === 'WAITING') {
+            simulation.resources.WAITING.queue.push(this);
+            this.state = 'waiting';
+        } else if (this.targetNode === 'PHARMACY') {
+            simulation.resources.PHARMACY.queue.push(this);
+            this.state = 'waiting';
+        } else if (this.targetNode === 'EXIT') {
+            this.state = 'finished';
+            simulation.stats.totalFinished++;
+        }
+    }
+}
+
+function initSimulation() {
+    const dailyFlow = parseInt(document.getElementById('dailyFlow').value);
+    const arrivalRate = dailyFlow / 480; // 人/分钟
+
+    simulation = {
+        running: false,
+        paused: false,
+        speed: simulation.speed, // Keep previous speed
+        time: 0,
+        arrivalRate: arrivalRate,
+        patients: [],
+        resources: {
+            REGISTRATION: { 
+                name: '挂号',
+                capacity: parseInt(document.getElementById('res_reg').value), 
+                queue: [], processing: [], 
+                serviceTime: parseFloat(document.getElementById('time_reg').value),
+                busyTime: 0
+            },
+            WAITING: { 
+                name: '候诊',
+                capacity: 9999, queue: [], processing: [], busyTime: 0
+            },
+            CONSULTATION: {
+                name: '诊室',
+                capacity: parseInt(document.getElementById('res_doc').value),
+                processing: [],
+                serviceTime: parseFloat(document.getElementById('time_doc').value),
+                busyTime: 0
+            },
+            PHARMACY: {
+                name: '取药',
+                capacity: parseInt(document.getElementById('res_phar').value),
+                queue: [], processing: [],
+                serviceTime: parseFloat(document.getElementById('time_phar').value),
+                busyTime: 0
+            }
+        },
+        stats: {
+            totalFinished: 0,
+            peakQueue: { REGISTRATION: 0, WAITING: 0, PHARMACY: 0 },
+            history: { time: [], q_reg: [], q_wait: [], q_phar: [] }
+        }
+    };
+    
+    // Reset Chart
+    chartInstance.data.labels = [];
+    chartInstance.data.datasets.forEach(d => d.data = []);
+    chartInstance.update();
+}
+
+function toggleSimulation() {
+    const btn = document.getElementById('btnPlayPause');
+    const playIcon = document.getElementById('iconPlay');
+    const pauseIcon = document.getElementById('iconPause');
+
+    if (!simulation.running) {
+        // Start
+        if (simulation.time === 0) initSimulation();
+        simulation.running = true;
+        simulation.paused = false;
+        playIcon.classList.add('hidden');
+        pauseIcon.classList.remove('hidden');
+        lastFrameTime = performance.now();
+        requestAnimationFrame(gameLoop);
+    } else {
+        // Toggle Pause
+        simulation.paused = !simulation.paused;
+        if (simulation.paused) {
+            playIcon.classList.remove('hidden');
+            pauseIcon.classList.add('hidden');
+            btn.classList.remove('text-purple-600');
+            btn.classList.add('text-green-600');
+        } else {
+            playIcon.classList.add('hidden');
+            pauseIcon.classList.remove('hidden');
+            btn.classList.add('text-purple-600');
+            btn.classList.remove('text-green-600');
+            lastFrameTime = performance.now();
+            requestAnimationFrame(gameLoop);
+        }
+    }
+}
+
+function resetSimulation() {
+    simulation.running = false;
+    simulation.paused = false;
+    simulation.time = 0;
+    simulation.patients = [];
+    document.getElementById('iconPlay').classList.remove('hidden');
+    document.getElementById('iconPause').classList.add('hidden');
+    document.getElementById('simTimeDisplay').innerText = "00:00";
+    initSimulation(); // Re-init data
+    drawFrame();
+    updateUI();
+}
+
+function changeSpeed(val) {
+    simulation.speed = val;
+    // UI feedback
+    [0.5, 1, 5, 20].forEach(s => {
+        const el = document.getElementById(`speed${s}`) || document.querySelector(`button[onclick="changeSpeed(${s})"]`);
+        if(s === val) {
+            el.className = "px-3 py-1.5 text-xs font-bold rounded-lg bg-purple-100 text-purple-700 transition";
+        } else {
+            el.className = "px-3 py-1.5 text-xs font-semibold rounded-lg hover:bg-white/50 text-gray-600 transition";
+        }
+    });
+}
+
+// ---------------- 主循环 ----------------
+let lastFrameTime = 0;
+let uiUpdateTimer = 0;
+
+function gameLoop(now) {
+    if (!simulation.running || simulation.paused) return;
+
+    // Calculate Delta Time (simulated minutes)
+    // Real 16ms ~= 1/60s. 
+    // Let's say 1 real sec = 1 sim minute at 1x speed.
+    // dt (real ms) / 1000 * speed = sim minutes
+    const rawDt = now - lastFrameTime;
+    lastFrameTime = now;
+    
+    // Limit max dt to prevent jumps on tab switch
+    const safeDt = Math.min(rawDt, 100); 
+    const dt = (safeDt / 1000) * simulation.speed; // minutes
+
+    simulation.time += dt;
+
+    // 1. Generate Patients
+    if (simulation.time < CONFIG.maxTime) {
+        // Poisson-like arrival
+        if (Math.random() < simulation.arrivalRate * dt) {
+            simulation.patients.push(new Patient(simulation.patients.length));
+        }
+    } else {
+        // Time limit reached
+        if (simulation.patients.filter(p => p.state !== 'finished').length === 0) {
+            simulation.running = false;
+            document.getElementById('iconPlay').classList.remove('hidden');
+            document.getElementById('iconPause').classList.add('hidden');
+            alert("仿真完成：已达到8小时时间限制且所有患者已处理完毕。");
+            return;
+        }
+    }
+
+    // 2. Logic Update
+    updateLogic(dt);
+
+    // 3. Draw
+    drawFrame();
+
+    // 4. Update UI (throttled)
+    uiUpdateTimer += rawDt;
+    if (uiUpdateTimer > 500) { // Every 0.5s real time
+        updateUI();
+        uiUpdateTimer = 0;
+    }
+
+    if (simulation.running) {
+        animationFrameId = requestAnimationFrame(gameLoop);
+    }
+}
+
+function updateLogic(dt) {
+    const res = simulation.resources;
+
+    // --- Resource Logic ---
+    
+    // Registration
+    processQueue('REGISTRATION', res.REGISTRATION, dt, (p) => {
+        p.targetNode = 'WAITING';
+        p.state = 'walking';
+    });
+
+    // Waiting -> Consultation (Special Logic)
+    // Patients in WAITING queue enter CONSULTATION processing slots
+    while (res.CONSULTATION.processing.length < res.CONSULTATION.capacity && res.WAITING.queue.length > 0) {
+        const p = res.WAITING.queue.shift();
+        p.targetNode = 'CONSULTATION';
+        p.state = 'walking'; // Walking to doctor room
+        // Pre-reserve spot
+        res.CONSULTATION.processing.push({ patient: p, timer: res.CONSULTATION.serviceTime });
+    }
+
+    // Consultation Processing
+    for (let i = res.CONSULTATION.processing.length - 1; i >= 0; i--) {
+        let slot = res.CONSULTATION.processing[i];
+        
+        // Only count down time if patient arrived at desk
+        if (slot.patient.x === NODES.CONSULTATION.x && slot.patient.y === NODES.CONSULTATION.y) {
+             // Visual snap
+             slot.patient.state = 'service';
+             slot.timer -= dt;
+             res.CONSULTATION.busyTime += dt;
+        }
+
+        if (slot.timer <= 0) {
+            res.CONSULTATION.processing.splice(i, 1);
+            const p = slot.patient;
+            p.hasSeenDoctor = true;
+            if (p.isReturnVisit) {
+                // Simulate return visit loop (simplified: Doc -> Pharmacy -> Leave)
+                // Real complex logic would be Doc -> Exam -> Wait -> Doc
+                // Here we keep it simple as requested or treat as finished consultation
+                p.isReturnVisit = false;
+                p.targetNode = 'PHARMACY';
+            } else {
+                p.targetNode = 'PHARMACY';
+            }
+            p.state = 'walking';
+        }
+    }
+
+    // Pharmacy
+    processQueue('PHARMACY', res.PHARMACY, dt, (p) => {
+        p.targetNode = 'EXIT';
+        p.state = 'walking';
+    });
+
+    // --- Patient Move ---
+    simulation.patients.forEach(p => p.update(dt));
+
+    // --- Stats Recording ---
+    if (simulation.time % 10 < dt) { // approx every 10 sim mins
+        recordHistory();
+    }
+}
+
+function processQueue(name, resource, dt, onFinish) {
+    // Fill empty slots
+    while (resource.processing.length < resource.capacity && resource.queue.length > 0) {
+        const p = resource.queue.shift();
+        resource.processing.push({ patient: p, timer: resource.serviceTime });
+    }
+
+    // Process
+    for (let i = resource.processing.length - 1; i >= 0; i--) {
+        let slot = resource.processing[i];
+        slot.timer -= dt;
+        resource.busyTime += dt; // Utilitzation tracking
+        slot.patient.state = 'service'; // Visual update
+
+        if (slot.timer <= 0) {
+            resource.processing.splice(i, 1);
+            onFinish(slot.patient);
+        }
+    }
+}
+
+function recordHistory() {
+    const s = simulation.stats;
+    const r = simulation.resources;
+    
+    // Update Peak
+    s.peakQueue.REGISTRATION = Math.max(s.peakQueue.REGISTRATION, r.REGISTRATION.queue.length);
+    s.peakQueue.WAITING = Math.max(s.peakQueue.WAITING, r.WAITING.queue.length);
+    s.peakQueue.PHARMACY = Math.max(s.peakQueue.PHARMACY, r.PHARMACY.queue.length);
+
+    // Push to chart data
+    s.history.time.push(Math.floor(simulation.time));
+    s.history.q_reg.push(r.REGISTRATION.queue.length);
+    s.history.q_wait.push(r.WAITING.queue.length);
+    s.history.q_phar.push(r.PHARMACY.queue.length);
+
+    // Limit chart history to last 50 points to save memory
+    if (s.history.time.length > 50) {
+        s.history.time.shift();
+        s.history.q_reg.shift();
+        s.history.q_wait.shift();
+        s.history.q_phar.shift();
+    }
+}
+
+// ---------------- 绘图与UI更新 ----------------
+
+function drawFrame() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.save();
+    // Apply Camera
+    ctx.translate(camera.x, camera.y);
+    ctx.scale(camera.scale, camera.scale);
+
+    // Draw Links
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(NODES.ENTRANCE.x, NODES.ENTRANCE.y);
+    ctx.lineTo(NODES.REGISTRATION.x, NODES.REGISTRATION.y);
+    ctx.lineTo(NODES.WAITING.x, NODES.WAITING.y);
+    ctx.lineTo(NODES.CONSULTATION.x, NODES.CONSULTATION.y);
+    ctx.lineTo(NODES.PHARMACY.x, NODES.PHARMACY.y);
+    ctx.lineTo(NODES.EXIT.x, NODES.EXIT.y);
+    // Shortcut
+    ctx.moveTo(NODES.REGISTRATION.x, NODES.REGISTRATION.y);
+    ctx.quadraticCurveTo(NODES.REGISTRATION.x + 100, NODES.REGISTRATION.y + 100, NODES.PHARMACY.x, NODES.PHARMACY.y);
+    ctx.stroke();
+
+    // Draw Nodes
+    Object.values(NODES).forEach(node => {
+        // Shadow
+        ctx.fillStyle = 'rgba(0,0,0,0.1)';
+        ctx.beginPath();
+        ctx.arc(node.x, node.y+5, CONFIG.nodeRadius, 0, Math.PI*2);
+        ctx.fill();
+
+        // Body
+        ctx.fillStyle = node.color;
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, CONFIG.nodeRadius, 0, Math.PI*2);
+        ctx.fill();
+
+        // Glass Shine
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.beginPath();
+        ctx.arc(node.x - 10, node.y - 10, 10, 0, Math.PI*2);
+        ctx.fill();
+
+        // Label
+        ctx.fillStyle = '#475569';
+        ctx.font = '600 12px Inter';
+        ctx.textAlign = 'center';
+        ctx.fillText(node.label, node.x, node.y + CONFIG.nodeRadius + 20);
+    });
+
+    // Draw Patients
+    simulation.patients.forEach(p => {
+        if(p.state === 'finished') return;
+        
+        ctx.fillStyle = p.state === 'waiting' ? '#ef4444' : 
+                        p.state === 'service' ? '#10b981' : '#3b82f6';
+        
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, CONFIG.patientRadius, 0, Math.PI*2);
+        ctx.fill();
+    });
+
+    ctx.restore();
+}
+
+function updateUI() {
+    // 1. Time Display
+    const h = Math.floor(simulation.time / 60);
+    const m = Math.floor(simulation.time % 60);
+    document.getElementById('simTimeDisplay').innerText = 
+        `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
+    if(simulation.time >= CONFIG.maxTime) {
+         document.getElementById('simTimeDisplay').classList.add('text-red-500');
+    }
+
+    // 2. Simple Numbers
+    document.getElementById('live_total_patients').innerText = simulation.patients.filter(p=>p.state !== 'finished').length;
+    document.getElementById('live_finished').innerText = simulation.stats.totalFinished;
+
+    // 3. Live Table & Design Hint
+    const r = simulation.resources;
+    let hint = "运行良好";
+    let utilization = {};
+    
+    ['REGISTRATION', 'WAITING', 'PHARMACY'].forEach(key => {
+        const q = r[key].queue.length;
+        const peak = simulation.stats.peakQueue[key];
+        // Simplified utilization: busyTime / (simulationTime * capacity)
+        let util = 0;
+        if (key !== 'WAITING' && simulation.time > 0) {
+             util = (r[key].busyTime / (simulation.time * r[key].capacity)) * 100;
+        } else if (key === 'CONSULTATION') {
+             // For waiting area, we look at Consultation util
+             const docRes = r.CONSULTATION;
+             util = (docRes.busyTime / (simulation.time * docRes.capacity)) * 100;
+        }
+
+        utilization[key] = util.toFixed(0);
+        
+        if (util > 90) hint = `警告: ${r[key].name} 资源过载！`;
+        if (q > 20) hint = `警告: ${r[key].name} 排队过长，请增加窗口。`;
+    });
+
+    document.getElementById('liveTableBody').innerHTML = `
+        <tr class="hover:bg-purple-50/50 transition">
+            <td class="py-2 px-3">挂号区</td>
+            <td class="py-2 px-3 text-right font-mono ${r.REGISTRATION.queue.length>5 ? 'text-red-500 font-bold' : ''}">${r.REGISTRATION.queue.length}</td>
+            <td class="py-2 px-3 text-right font-mono text-gray-400">${simulation.stats.peakQueue.REGISTRATION}</td>
+            <td class="py-2 px-3 text-right text-xs">${utilization.REGISTRATION}%</td>
+        </tr>
+        <tr class="hover:bg-purple-50/50 transition">
+            <td class="py-2 px-3">候诊区</td>
+            <td class="py-2 px-3 text-right font-mono ${r.WAITING.queue.length>10 ? 'text-red-500 font-bold' : ''}">${r.WAITING.queue.length}</td>
+            <td class="py-2 px-3 text-right font-mono text-gray-400">${simulation.stats.peakQueue.WAITING}</td>
+            <td class="py-2 px-3 text-right text-xs">--</td>
+        </tr>
+         <tr class="hover:bg-purple-50/50 transition">
+            <td class="py-2 px-3">取药区</td>
+            <td class="py-2 px-3 text-right font-mono ${r.PHARMACY.queue.length>5 ? 'text-red-500 font-bold' : ''}">${r.PHARMACY.queue.length}</td>
+            <td class="py-2 px-3 text-right font-mono text-gray-400">${simulation.stats.peakQueue.PHARMACY}</td>
+            <td class="py-2 px-3 text-right text-xs">${utilization.PHARMACY}%</td>
+        </tr>
+    `;
+    
+    document.getElementById('designHint').innerText = hint;
+    if(hint.includes('警告')) document.getElementById('designHint').className = 'text-red-600 font-bold animate-pulse';
+    else document.getElementById('designHint').className = 'text-green-600';
+
+    // 4. Update Chart
+    chartInstance.data.labels = simulation.stats.history.time;
+    chartInstance.data.datasets[0].data = simulation.stats.history.q_reg;
+    chartInstance.data.datasets[1].data = simulation.stats.history.q_wait;
+    chartInstance.data.datasets[2].data = simulation.stats.history.q_phar;
+    chartInstance.update('none'); // Update without animation for performance
+}
+
+// Boot
+initChart();
+resizeCanvas();
+initSimulation();
+drawFrame();
+
+</script>
+</body>
+</html>
