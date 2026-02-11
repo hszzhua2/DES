@@ -293,10 +293,47 @@
                     </div>
                 </div>
 
+                <!-- Distance Inputs (New) -->
+                <div class="bg-blue-50/30 p-3 rounded-2xl border border-blue-100/50 shadow-sm">
+                    <label class="block text-[10px] font-bold text-blue-600 uppercase mb-2">关键路径距离 D (m)</label>
+                    <div class="space-y-2 text-[10px]">
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-600">A挂号 → B大厅</span>
+                            <input type="number" id="d_A_B" value="15" class="w-16 glass-input text-center px-1 py-1 font-bold">
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-600">B大厅 → C1护士</span>
+                            <input type="number" id="d_B_C1" value="25" class="w-16 glass-input text-center px-1 py-1 font-bold">
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-600">C2候诊 → D诊室</span>
+                            <input type="number" id="d_C_D" value="10" class="w-16 glass-input text-center px-1 py-1 font-bold">
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-600">D诊室 → G检查</span>
+                            <input type="number" id="d_D_G" value="40" class="w-16 glass-input text-center px-1 py-1 font-bold">
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-600">D诊室 → E药房</span>
+                            <input type="number" id="d_D_E" value="35" class="w-16 glass-input text-center px-1 py-1 font-bold">
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-600">E药房 → F离院</span>
+                            <input type="number" id="d_E_F" value="20" class="w-16 glass-input text-center px-1 py-1 font-bold">
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Resources Group -->
                 <div class="space-y-3">
                     <label class="block text-[10px] font-bold text-gray-500 uppercase border-b border-gray-200/50 pb-1">节点资源 (Resources)</label>
                     
+                    <div class="grid grid-cols-4 gap-2 px-2 text-[9px] font-bold text-gray-400">
+                        <span class="col-span-2">节点名称</span>
+                        <span class="text-center">数量 (个)</span>
+                        <span class="text-center">耗时 (分)</span>
+                    </div>
+
                     <div class="space-y-2">
                         <!-- Helper Mixin style via classes -->
                         <div class="grid grid-cols-4 gap-2 items-center bg-white/30 p-2 rounded-xl border border-white/40">
@@ -432,6 +469,20 @@
                     </div>
                 </div>
 
+                <!-- New Efficiency Metrics -->
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="bg-white/40 p-3 rounded-2xl border border-white/50 shadow-sm flex flex-col items-center justify-center">
+                        <span class="text-[9px] text-gray-500 uppercase font-bold mb-1">人均行走距离</span>
+                        <span class="text-lg font-black text-indigo-700 font-mono" id="val_avg_dist">0</span>
+                        <span class="text-[9px] text-indigo-400 font-bold">meters</span>
+                    </div>
+                    <div class="bg-white/40 p-3 rounded-2xl border border-white/50 shadow-sm flex flex-col items-center justify-center">
+                        <span class="text-[9px] text-gray-500 uppercase font-bold mb-1">人均使用面积</span>
+                        <span class="text-lg font-black text-indigo-700 font-mono" id="val_area_per_person">0</span>
+                        <span class="text-[9px] text-indigo-400 font-bold">m²/person</span>
+                    </div>
+                </div>
+
                 <!-- Detailed List -->
                 <div class="bg-white/30 rounded-2xl border border-white/40 overflow-hidden shadow-sm">
                     <table class="w-full text-[10px]">
@@ -501,7 +552,7 @@
 const CONFIG = {
     nodeRadius: 24,
     patientRadius: 3,
-    walkSpeed: 60, // pixels per second (visual)
+    walkSpeed: 60, // pixels per second (visual base)
     scale: 1,
     maxTime: 480 // minutes (8 hours)
 };
@@ -532,10 +583,12 @@ let simState = {
     patients: [],
     finishedPatients: [], // Archive for graph
     resources: {},
-    heatmapData: {}, // { nodeID: [qLen_t0, qLen_t1, ...] }
+    heatmapData: {}, 
+    distances: {}, // Stores user input distances
     stats: {
         finished: 0,
         peakWait: { C2: 0, C3: 0 },
+        peakConcurrent: 0, // Max active patients at once
         history: { time: [], qC2: [], qC3: [] }
     }
 };
@@ -554,6 +607,16 @@ function initSim() {
     // Read Inputs
     const hourlyFlow = parseInt(document.getElementById('hourlyFlow').value);
     
+    // Read Distances (Default fallback if empty)
+    simState.distances = {
+        'A_B': parseInt(document.getElementById('d_A_B').value) || 15,
+        'B_C1': parseInt(document.getElementById('d_B_C1').value) || 25,
+        'C_D': parseInt(document.getElementById('d_C_D').value) || 10,
+        'D_G': parseInt(document.getElementById('d_D_G').value) || 40,
+        'D_E': parseInt(document.getElementById('d_D_E').value) || 35,
+        'E_F': parseInt(document.getElementById('d_E_F').value) || 20
+    };
+
     // Reset State
     simState.time = 0;
     simState.patients = [];
@@ -561,14 +624,14 @@ function initSim() {
     simState.heatmapData = {};
     LANES.forEach(l => simState.heatmapData[l] = []);
     
-    simState.stats = { finished: 0, peakWait: { C2:0, C3:0 }, history: { time:[], qC2:[], qC3:[] } };
+    simState.stats = { finished: 0, peakWait: { C2:0, C3:0 }, peakConcurrent: 0, history: { time:[], qC2:[], qC3:[] } };
     
-    // Initialize Resources (Queues & Servers)
+    // Initialize Resources
     const createRes = (id, capId, timeId) => ({
         capacity: parseInt(document.getElementById(capId).value),
         serviceTime: parseFloat(document.getElementById(timeId).value),
         queue: [],
-        processing: [] // { p: patient, t: remainingTime }
+        processing: [] 
     });
 
     simState.resources = {
@@ -577,7 +640,6 @@ function initSim() {
         D: createRes('D', 'res_doc', 'time_doc'),
         G: createRes('G', 'res_exam', 'time_exam'),
         E: createRes('E', 'res_phar', 'time_phar'),
-        // Virtual Queues (Unlimited Capacity but tracked)
         C2: { capacity: 9999, queue: [], processing: [] }, 
         C3: { capacity: parseInt(document.getElementById('res_doc').value), queue: [], processing: [] } 
     };
@@ -619,29 +681,71 @@ class Patient {
         this.x = NODES.A.x - 50;
         this.y = NODES.A.y;
         this.target = 'A';
-        this.state = 'walking'; // walking, waiting, service, finished
+        this.state = 'walking'; 
         this.needsExam = Math.random() < simState.examRate;
         this.hasDoneExam = false;
         
-        // Trace for Graph
-        this.trace = []; // [{t, y}]
+        this.trace = []; 
         this.graphColor = this.needsExam ? 'rgba(79, 70, 229, 0.4)' : 'rgba(37, 99, 235, 0.4)';
         
-        // Movement
+        // Stats
+        this.totalWalkDist = 0;
+
+        // Visual Movement
         this.startX = this.x;
         this.startY = this.y;
         this.destX = NODES.A.x;
         this.destY = NODES.A.y;
         this.progress = 0;
-        this.startNode = null; // For graph Y interpolation
+        this.startNode = null;
         
-        // Visual Jitter
         this.jx = (Math.random() - 0.5) * 15;
         this.jy = (Math.random() - 0.5) * 15;
     }
 
     setTarget(nodeId) {
-        this.startNode = this.target; // Previous target is now start
+        // Calculate Distance Key
+        let distKey = null;
+        const from = this.target; // current target is actually the "from" node now
+        const to = nodeId;
+
+        // Match edges to config keys
+        if ((from === 'A' && to === 'B') || (from === 'B' && to === 'A')) distKey = 'A_B';
+        else if ((from === 'B' && to === 'C1') || (from === 'C1' && to === 'B')) distKey = 'B_C1';
+        else if (from === 'C1' && to === 'C2') distKey = null; // negligible
+        else if (from === 'C2' && to === 'C3') distKey = null; // negligible
+        else if ((from === 'C3' && to === 'D') || (from === 'D' && to === 'C3')) distKey = 'C_D'; // Wait to Doc
+        else if ((from === 'D' && to === 'G') || (from === 'G' && to === 'D')) distKey = 'D_G';
+        else if ((from === 'D' && to === 'E') || (from === 'E' && to === 'D')) distKey = 'D_E';
+        else if ((from === 'G' && to === 'C1')) distKey = 'B_C1'; // Approximation: Exam back to Nurse is similar to Hall->Nurse? Or assume Exam is far. Let's use B_C1 + A_B for worst case? Let's just assume 30m for internal return.
+        else if (from === 'E' && to === 'F') distKey = 'E_F';
+
+        let physDist = 0;
+        if (distKey && simState.distances[distKey]) {
+            physDist = simState.distances[distKey];
+        } else if (from === 'G' && to === 'C1') {
+            physDist = 30; // Hardcoded return path
+        } else if (from === 'G' && to === 'A') {
+            physDist = 50; // Hardcoded return path
+        }
+
+        // Update Total Stats
+        this.totalWalkDist += physDist;
+
+        // Calculate Logic Duration based on Physical Distance
+        // Walking Speed 1.2 m/s = 72 m/min
+        // duration (min) = dist (m) / 72
+        // IF physDist is 0 (e.g. C1->C2), use a small default 0.1 min
+        const durationMin = physDist > 0 ? (physDist / 72) : 0.1;
+        
+        // Convert logic duration (min) to simulation update steps
+        // The update loop provides dt in minutes.
+        // We use seconds for `this.duration` in the original code, but `update` takes dt in seconds.
+        // So `duration` property should be in seconds.
+        // duration (sec) = durationMin * 60
+        this.duration = durationMin * 60;
+
+        this.startNode = this.target; 
         this.target = nodeId;
         this.state = 'walking';
         this.startX = this.x;
@@ -649,16 +753,10 @@ class Patient {
         this.destX = NODES[nodeId].x;
         this.destY = NODES[nodeId].y;
         this.progress = 0;
-        
-        // Calculate Distance for Speed
-        const dist = Math.sqrt(Math.pow(this.destX - this.startX, 2) + Math.pow(this.destY - this.startY, 2));
-        this.duration = dist / CONFIG.walkSpeed; // seconds
     }
 
     update(dt) { // dt in seconds
-        // Record Graph Position (Interpolated Y)
         const curY = this.calculateGraphY();
-        // Optimization: only push if changed significantly or interval
         if (this.trace.length === 0 || simState.time - this.trace[this.trace.length-1].t > 0.5) {
              this.trace.push({ t: simState.time, y: curY });
         }
@@ -697,12 +795,10 @@ class Patient {
         }
 
         if (this.target === 'B') {
-            // Hall is just transit
             this.setTarget('C1');
             return;
         }
 
-        // Add to Queue
         if (this.target === 'C2') {
             simState.resources.C2.queue.push(this);
             this.state = 'waiting';
@@ -717,7 +813,6 @@ class Patient {
 }
 
 function updateSim(dt) { // dt in minutes
-    // 1. Spawn
     if (simState.time < CONFIG.maxTime) {
         if (Math.random() < simState.arrivalRate * dt) {
             const p = new Patient(Date.now());
@@ -726,20 +821,15 @@ function updateSim(dt) { // dt in minutes
         }
     }
 
-    // 2. Process Resources
-    // Helper to process standard server nodes
     const processServer = (nodeId, nextNodeFn) => {
         const res = simState.resources[nodeId];
-        // Move from Queue to Processing
         while (res.processing.length < res.capacity && res.queue.length > 0) {
             const p = res.queue.shift();
             p.state = 'service';
-            // Visual shift slightly
             p.x = NODES[nodeId].x + (Math.random()-0.5)*20; 
             p.y = NODES[nodeId].y + (Math.random()-0.5)*20;
             res.processing.push({ p: p, t: res.serviceTime });
         }
-        // Process
         for (let i = res.processing.length - 1; i >= 0; i--) {
             const item = res.processing[i];
             item.t -= dt;
@@ -751,20 +841,15 @@ function updateSim(dt) { // dt in minutes
         }
     };
 
-    // A -> B
     processServer('A', () => 'B');
-    
-    // C1 -> C2
     processServer('C1', () => 'C2');
 
-    // C2 (Wait 1) -> C3 (Wait 2) Logic
     const c3Cap = simState.resources.D.capacity; 
     while (simState.resources.C3.queue.length < c3Cap && simState.resources.C2.queue.length > 0) {
         const p = simState.resources.C2.queue.shift();
         p.setTarget('C3');
     }
 
-    // C3 -> D
     const resDoc = simState.resources.D;
     while (resDoc.processing.length < resDoc.capacity && simState.resources.C3.queue.length > 0) {
          const p = simState.resources.C3.queue.shift();
@@ -773,58 +858,51 @@ function updateSim(dt) { // dt in minutes
          p.y = NODES.D.y + (Math.random()-0.5)*30;
          resDoc.processing.push({ p: p, t: resDoc.serviceTime });
     }
-    // Process Doctor
+    
     for (let i = resDoc.processing.length - 1; i >= 0; i--) {
         const item = resDoc.processing[i];
         item.t -= dt;
         if (item.t <= 0) {
             resDoc.processing.splice(i, 1);
             if (item.p.needsExam && !item.p.hasDoneExam) {
-                // Go to Exam
                 item.p.setTarget('G');
             } else {
-                // Finish -> Pharm
                 item.p.setTarget('E');
             }
         }
     }
 
-    // G (Exam) -> C1 (Nurse) or A (Reg)
     processServer('G', (p) => {
         p.hasDoneExam = true;
         return Math.random() > 0.1 ? 'C1' : 'A';
     });
 
-    // E -> F
     processServer('E', () => 'F');
 
-    // 3. Move Patients
-    // Update active patients
     for (let i = simState.patients.length - 1; i >= 0; i--) {
         const p = simState.patients[i];
         if (p.state !== 'finished') {
             p.update(dt * 60);
         } else {
-             simState.patients.splice(i, 1); // Remove from active list
+             simState.patients.splice(i, 1);
         }
     }
 
-    // 4. Stats & Heatmap Recording
+    // Stats
     const timeIdx = Math.floor(simState.time);
-    // Ensure array size
     LANES.forEach(l => {
-        // Record heatmap data every minute
         while(simState.heatmapData[l].length <= timeIdx) {
             const qLen = simState.resources[l].queue ? simState.resources[l].queue.length : 0;
-            const pLen = simState.resources[l].processing ? simState.resources[l].processing.length : 0;
-            // For heatmaps, queue length is most important, but maybe utilization too? 
-            // Let's use Q length as per request "congestion"
             simState.heatmapData[l].push(qLen);
         }
     });
 
     simState.stats.peakWait.C2 = Math.max(simState.stats.peakWait.C2, simState.resources.C2.queue.length);
     simState.stats.peakWait.C3 = Math.max(simState.stats.peakWait.C3, simState.resources.C3.queue.length);
+    
+    // Calculate concurrent patients (Active + Waiting + Processing)
+    // Simplified: Just `simState.patients.length` since finished are removed
+    simState.stats.peakConcurrent = Math.max(simState.stats.peakConcurrent, simState.patients.length);
 
     if (simState.time % 5 < dt) {
         simState.stats.history.time.push(timeIdx);
@@ -839,7 +917,7 @@ function updateSim(dt) { // dt in minutes
     }
 }
 
-// ================= VISUALIZATION =================
+// ... [Visualization Functions drawLayout, drawGraph, etc. remain unchanged] ...
 const canvas = document.getElementById('simCanvas');
 const ctx = canvas.getContext('2d');
 const graphCanvas = document.getElementById('graphCanvas');
@@ -855,8 +933,6 @@ window.addEventListener('resize', resize);
 
 function drawLayoutLegend() {
     const pX = 20, pY = canvas.height - 130;
-    
-    // Background for Legend
     ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
     ctx.beginPath();
     ctx.roundRect(pX - 10, pY - 10, 160, 120, 12);
@@ -864,12 +940,10 @@ function drawLayoutLegend() {
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
     ctx.lineWidth = 1;
     ctx.stroke();
-
     ctx.font = 'bold 10px Inter';
     ctx.textAlign = 'left';
     ctx.fillStyle = '#475569';
     ctx.fillText('图例 Legend', pX, pY + 5);
-
     const items = [
         { c: '#94a3b8', t: '服务节点 Service' },
         { c: '#fbbf24', t: '排队节点 Queue' },
@@ -878,18 +952,12 @@ function drawLayoutLegend() {
         { c: '#4f46e5', t: '检查患者 Exam' , type: 'circle' },
         { c: '#ea580c', t: '回流患者 Return' , type: 'circle' }
     ];
-
     items.forEach((item, i) => {
         const y = pY + 25 + i * 15;
         ctx.fillStyle = item.c;
         ctx.beginPath();
-        if (item.type === 'circle') {
-             ctx.arc(pX + 6, y - 3, 4, 0, Math.PI*2);
-        } else {
-             ctx.roundRect(pX, y - 7, 12, 8, 2);
-        }
+        if (item.type === 'circle') { ctx.arc(pX + 6, y - 3, 4, 0, Math.PI*2); } else { ctx.roundRect(pX, y - 7, 12, 8, 2); }
         ctx.fill();
-        
         ctx.fillStyle = '#64748b';
         ctx.font = '10px Inter';
         ctx.fillText(item.t, pX + 20, y);
@@ -899,64 +967,32 @@ function drawLayoutLegend() {
 function drawLayout() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.save();
-    
-    // Apply Camera
     ctx.translate(cameraLayout.x, cameraLayout.y);
     ctx.scale(cameraLayout.scale, cameraLayout.scale);
-    
-    // Draw Connections
     ctx.beginPath();
     ctx.strokeStyle = 'rgba(203, 213, 225, 0.8)';
     ctx.lineWidth = 3;
     ctx.lineCap = 'round';
-    // Standard Flow
     ctx.moveTo(NODES.A.x, NODES.A.y); ctx.lineTo(NODES.B.x, NODES.B.y);
     ctx.lineTo(NODES.C1.x, NODES.C1.y); ctx.lineTo(NODES.C2.x, NODES.C2.y);
     ctx.lineTo(NODES.C3.x, NODES.C3.y); ctx.lineTo(NODES.D.x, NODES.D.y);
     ctx.lineTo(NODES.E.x, NODES.E.y); ctx.lineTo(NODES.F.x, NODES.F.y);
     ctx.stroke();
-
-    // Exam Flow
     ctx.beginPath();
     ctx.strokeStyle = 'rgba(199, 210, 254, 0.8)';
     ctx.setLineDash([5, 5]);
-    ctx.moveTo(NODES.D.x, NODES.D.y); ctx.lineTo(NODES.G.x, NODES.G.y); // Doc -> Exam
-    ctx.lineTo(NODES.C1.x, NODES.G.y); ctx.lineTo(NODES.C1.x, NODES.C1.y); // Exam -> Nurse
+    ctx.moveTo(NODES.D.x, NODES.D.y); ctx.lineTo(NODES.G.x, NODES.G.y); 
+    ctx.lineTo(NODES.C1.x, NODES.G.y); ctx.lineTo(NODES.C1.x, NODES.C1.y); 
     ctx.stroke();
     ctx.setLineDash([]);
-
-    // Draw Nodes (Liquid Glass Style)
     Object.keys(NODES).forEach(k => {
         const n = NODES[k];
-        
-        // Shadow
-        ctx.fillStyle = 'rgba(0,0,0,0.1)';
-        ctx.beginPath();
-        ctx.arc(n.x, n.y + 4, CONFIG.nodeRadius, 0, Math.PI*2);
-        ctx.fill();
-
-        // Base Color
-        ctx.fillStyle = n.color;
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, CONFIG.nodeRadius, 0, Math.PI*2);
-        ctx.fill();
-        
-        // Highlight (Glass reflection)
+        ctx.fillStyle = 'rgba(0,0,0,0.1)'; ctx.beginPath(); ctx.arc(n.x, n.y + 4, CONFIG.nodeRadius, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = n.color; ctx.beginPath(); ctx.arc(n.x, n.y, CONFIG.nodeRadius, 0, Math.PI*2); ctx.fill();
         const grad = ctx.createLinearGradient(n.x - CONFIG.nodeRadius, n.y - CONFIG.nodeRadius, n.x + CONFIG.nodeRadius, n.y + CONFIG.nodeRadius);
-        grad.addColorStop(0, 'rgba(255,255,255,0.7)');
-        grad.addColorStop(0.5, 'rgba(255,255,255,0)');
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, CONFIG.nodeRadius, 0, Math.PI*2);
-        ctx.fill();
-        
-        // Label
-        ctx.fillStyle = '#334155';
-        ctx.font = 'bold 11px Inter';
-        ctx.textAlign = 'center';
-        ctx.fillText(n.label, n.x, n.y + CONFIG.nodeRadius + 14);
-        
-        // Count Badge
+        grad.addColorStop(0, 'rgba(255,255,255,0.7)'); grad.addColorStop(0.5, 'rgba(255,255,255,0)');
+        ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(n.x, n.y, CONFIG.nodeRadius, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#334155'; ctx.font = 'bold 11px Inter'; ctx.textAlign = 'center'; ctx.fillText(n.label, n.x, n.y + CONFIG.nodeRadius + 14);
         let count = 0;
         if (simState.resources[k]) {
             const qL = simState.resources[k].queue ? simState.resources[k].queue.length : 0;
@@ -964,82 +1000,33 @@ function drawLayout() {
             count = qL + pL;
         }
         if (count > 0) {
-            ctx.fillStyle = '#ef4444';
-            ctx.beginPath();
-            ctx.arc(n.x + 10, n.y - 10, 9, 0, Math.PI*2);
-            ctx.fill();
-            ctx.fillStyle = 'white';
-            ctx.font = 'bold 10px Inter';
-            ctx.fillText(count, n.x+10, n.y-6.5);
+            ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(n.x + 10, n.y - 10, 9, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = 'white'; ctx.font = 'bold 10px Inter'; ctx.fillText(count, n.x+10, n.y-6.5);
         }
     });
-
-    // Draw Patients (Liquid Droplets)
     simState.patients.forEach(p => {
         if (p.state === 'finished') return;
         const color = p.hasDoneExam ? '#ea580c' : (p.needsExam ? '#4f46e5' : '#2563eb');
-        
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(p.x + p.jx, p.y + p.jy, CONFIG.patientRadius, 0, Math.PI*2);
-        ctx.fill();
-        
-        // Specular dot
-        ctx.fillStyle = 'rgba(255,255,255,0.6)';
-        ctx.beginPath();
-        ctx.arc(p.x + p.jx - 1, p.y + p.jy - 1, 1, 0, Math.PI*2);
-        ctx.fill();
+        ctx.fillStyle = color; ctx.beginPath(); ctx.arc(p.x + p.jx, p.y + p.jy, CONFIG.patientRadius, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.beginPath(); ctx.arc(p.x + p.jx - 1, p.y + p.jy - 1, 1, 0, Math.PI*2); ctx.fill();
     });
-
     ctx.restore();
-    
-    // Draw Legend (Fixed to Screen)
     drawLayoutLegend();
 }
 
 function drawGraphLegend() {
     const gCtx = graphCtx;
-    const pX = 20, pY = graphCanvas.height - 100; // Moved up slightly
-
-     // Background for Legend
-    gCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-    gCtx.beginPath();
-    gCtx.roundRect(pX - 10, pY - 10, 160, 90, 12); // Taller
-    gCtx.fill();
-    gCtx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-    gCtx.lineWidth = 1;
-    gCtx.stroke();
-
-    gCtx.font = 'bold 10px Inter';
-    gCtx.textAlign = 'left';
-    gCtx.fillStyle = '#475569';
-    gCtx.fillText('拥堵热力 Heatmap', pX, pY + 5);
-
-    const items = [
-        { c: '#bbf7d0', t: '通畅 < 50%' },
-        { c: '#fde047', t: '繁忙 > 50%' },
-        { c: '#fca5a5', t: '拥堵 > 100%' },
-        { c: '#2563eb', t: '患者轨迹 Trace', type: 'line' } 
-    ];
-
+    const pX = 20, pY = graphCanvas.height - 100;
+    gCtx.fillStyle = 'rgba(255, 255, 255, 0.7)'; gCtx.beginPath(); gCtx.roundRect(pX - 10, pY - 10, 160, 90, 12); gCtx.fill();
+    gCtx.strokeStyle = 'rgba(255, 255, 255, 0.6)'; gCtx.lineWidth = 1; gCtx.stroke();
+    gCtx.font = 'bold 10px Inter'; gCtx.textAlign = 'left'; gCtx.fillStyle = '#475569'; gCtx.fillText('拥堵热力 Heatmap', pX, pY + 5);
+    const items = [ { c: '#bbf7d0', t: '通畅 < 50%' }, { c: '#fde047', t: '繁忙 > 50%' }, { c: '#fca5a5', t: '拥堵 > 100%' }, { c: '#2563eb', t: '患者轨迹 Trace', type: 'line' } ];
     items.forEach((item, i) => {
         const y = pY + 25 + i * 15;
         gCtx.fillStyle = item.c;
-        if(item.type === 'line') {
-             gCtx.strokeStyle = item.c;
-             gCtx.lineWidth = 2;
-             gCtx.beginPath();
-             gCtx.moveTo(pX, y - 3);
-             gCtx.lineTo(pX + 12, y - 3);
-             gCtx.stroke();
-        } else {
-             gCtx.roundRect(pX, y - 7, 12, 8, 2);
-             gCtx.fill();
-        }
-        
-        gCtx.fillStyle = '#64748b';
-        gCtx.font = '10px Inter';
-        gCtx.fillText(item.t, pX + 20, y);
+        if(item.type === 'line') { gCtx.strokeStyle = item.c; gCtx.lineWidth = 2; gCtx.beginPath(); gCtx.moveTo(pX, y - 3); gCtx.lineTo(pX + 12, y - 3); gCtx.stroke(); } 
+        else { gCtx.roundRect(pX, y - 7, 12, 8, 2); gCtx.fill(); }
+        gCtx.fillStyle = '#64748b'; gCtx.font = '10px Inter'; gCtx.fillText(item.t, pX + 20, y);
     });
 }
 
@@ -1047,70 +1034,39 @@ function drawGraph() {
     const w = graphCanvas.width;
     const h = graphCanvas.height;
     graphCtx.clearRect(0,0,w,h);
-    
     graphCtx.save();
     graphCtx.translate(cameraGraph.x, cameraGraph.y);
     graphCtx.scale(cameraGraph.scale, cameraGraph.scale);
-
     const rowH = h / LANES.length;
     const warnLimit = parseInt(document.getElementById('warn_thresh').value) || 10;
-    
-    // Scale: Fit maxTime (480) into width
     const xScale = w / CONFIG.maxTime;
-
-    // 1. Draw Heatmap Backgrounds
     LANES.forEach((k, i) => {
         const y = i * rowH;
-        
-        // Draw History Heatmap
         const history = simState.heatmapData[k];
         if (history && history.length > 0) {
-            // Optimize drawing: Draw 1px wide rects for each minute
-            // Or larger blocks
             for (let t = 0; t < history.length; t++) {
                 const qLen = history[t];
-                // Color Logic
-                let color = 'rgba(240, 253, 244, 0.8)'; // default green tint
-                if (qLen > warnLimit) color = 'rgba(254, 202, 202, 0.8)'; // Red
-                else if (qLen > warnLimit * 0.5) color = 'rgba(254, 240, 138, 0.8)'; // Yellow
-                
+                let color = 'rgba(240, 253, 244, 0.8)';
+                if (qLen > warnLimit) color = 'rgba(254, 202, 202, 0.8)';
+                else if (qLen > warnLimit * 0.5) color = 'rgba(254, 240, 138, 0.8)';
                 graphCtx.fillStyle = color;
-                // Draw strip
-                // x = t * xScale, width = xScale (approx)
-                // Use slight overlap to avoid gaps
                 graphCtx.fillRect(t * xScale, y, Math.max(1, xScale) + 0.5, rowH);
             }
         }
-
-        // Divider line
-        graphCtx.strokeStyle = 'rgba(200,200,200,0.3)';
-        graphCtx.lineWidth = 1;
-        graphCtx.beginPath();
-        graphCtx.moveTo(-w, y + rowH);
-        graphCtx.lineTo(w*2, y + rowH);
-        graphCtx.stroke();
-
-        // Label (Draw on top of heat)
-        graphCtx.fillStyle = '#475569';
-        graphCtx.font = 'bold 11px Inter';
-        graphCtx.fillText(NODES[k].label, 5, y + rowH/2);
+        graphCtx.strokeStyle = 'rgba(200,200,200,0.3)'; graphCtx.lineWidth = 1;
+        graphCtx.beginPath(); graphCtx.moveTo(-w, y + rowH); graphCtx.lineTo(w*2, y + rowH); graphCtx.stroke();
+        graphCtx.fillStyle = '#475569'; graphCtx.font = 'bold 11px Inter'; graphCtx.fillText(NODES[k].label, 5, y + rowH/2);
     });
-
-    // 2. Draw Patient Traces
     const allPatients = [...simState.finishedPatients, ...simState.patients];
     graphCtx.lineWidth = 1;
-    
     allPatients.forEach(p => {
         if(p.trace.length < 2) return;
-        
         graphCtx.strokeStyle = p.graphColor;
-        graphCtx.globalAlpha = 0.4; // More transparent to see heatmap
+        graphCtx.globalAlpha = 0.4;
         graphCtx.beginPath();
-        
         const startX = p.trace[0].t * xScale;
         const startY = p.trace[0].y * rowH + rowH/2 + p.jy; 
         graphCtx.moveTo(startX, startY);
-        
         for(let i=1; i<p.trace.length; i++) {
             const px = p.trace[i].t * xScale;
             const py = p.trace[i].y * rowH + rowH/2 + p.jy;
@@ -1119,29 +1075,15 @@ function drawGraph() {
         graphCtx.stroke();
         graphCtx.globalAlpha = 1.0;
     });
-    
-    // 3. Current Time Line
     const cx = simState.time * xScale;
-    graphCtx.strokeStyle = '#ef4444';
-    graphCtx.lineWidth = 2;
-    graphCtx.beginPath();
-    graphCtx.moveTo(cx, 0);
-    graphCtx.lineTo(cx, h);
-    graphCtx.stroke();
-    
-    // 4. Hour Markers
-    graphCtx.textAlign = 'center';
-    graphCtx.fillStyle = '#94a3b8';
+    graphCtx.strokeStyle = '#ef4444'; graphCtx.lineWidth = 2;
+    graphCtx.beginPath(); graphCtx.moveTo(cx, 0); graphCtx.lineTo(cx, h); graphCtx.stroke();
+    graphCtx.textAlign = 'center'; graphCtx.fillStyle = '#94a3b8';
     for (let hMark = 0; hMark <= 8; hMark++) {
         const mx = (hMark * 60) * xScale;
         graphCtx.fillText(hMark + "h", mx, h - 5);
-        graphCtx.beginPath();
-        graphCtx.strokeStyle = 'rgba(0,0,0,0.1)';
-        graphCtx.moveTo(mx, 0);
-        graphCtx.lineTo(mx, h);
-        graphCtx.stroke();
+        graphCtx.beginPath(); graphCtx.strokeStyle = 'rgba(0,0,0,0.1)'; graphCtx.moveTo(mx, 0); graphCtx.lineTo(mx, h); graphCtx.stroke();
     }
-
     graphCtx.restore();
     drawGraphLegend();
 }
@@ -1149,51 +1091,27 @@ function drawGraph() {
 function loop() {
     if (simState.running) {
         const now = performance.now();
-        const dtReal = (now - lastTime) / 1000; // seconds
+        const dtReal = (now - lastTime) / 1000; 
         lastTime = now;
-        
-        // Simulation Time Step logic for High Speed
-        // If speed is high, we subdivide the step to maintain stability
-        // Target: simState.speed = multiplier of real time
-        // E.g. speed=100 => 1s real = 100min sim? No, usually 1s real = 1s sim * speed
-        // Here our logic was: simDt = dt * speed / 60 (minutes)
-        // If speed = 100, dt=0.016 (60fps), simDt = 0.016 * 100 / 60 = 0.026 min.
-        // This is small enough.
-        // But if speed = 10000? 
-        
         let multiplier = simState.speed;
         let subSteps = 1;
-        
-        if (multiplier > 50) {
-            subSteps = 10; // Break into 10 steps per frame
-            multiplier = multiplier / 10;
-        }
-        
+        if (multiplier > 50) { subSteps = 10; multiplier = multiplier / 10; }
         for (let i = 0; i < subSteps; i++) {
-             const simDt = (dtReal * multiplier) / 60; // minutes
+             const simDt = (dtReal * multiplier) / 60; 
              simState.time += simDt;
              updateSim(simDt);
-             if (simState.time >= CONFIG.maxTime) {
-                 simState.running = false;
-                 break;
-             }
+             if (simState.time >= CONFIG.maxTime) { simState.running = false; break; }
         }
-
         document.getElementById('simTimeDisplay').innerText = 
             `${Math.floor(simState.time/60).toString().padStart(2,'0')}:${Math.floor(simState.time%60).toString().padStart(2,'0')}`;
-        
         updateReport();
     }
-    
-    if (currentView === 'layout') drawLayout();
-    else drawGraph();
-    
+    if (currentView === 'layout') drawLayout(); else drawGraph();
     animFrame = requestAnimationFrame(loop);
 }
 
 // ================= REPORTING =================
 function updateReport() {
-    // Inputs
     const counts = {
         reg: parseInt(document.getElementById('res_reg').value),
         nurse: parseInt(document.getElementById('res_nurse').value),
@@ -1207,49 +1125,55 @@ function updateReport() {
         wait: parseFloat(document.getElementById('area_wait_unit').value)
     };
 
-    // Calculations
-    const areaReg = counts.reg * 6; // Est 6sqm per window
+    const areaReg = counts.reg * 6; 
     const areaNurse = unitAreas.nurse;
     const areaDoc = counts.doc * unitAreas.doc;
     const areaExam = counts.exam * unitAreas.exam;
     
-    // Dynamic Wait Areas
     const peak1 = simState.stats.peakWait.C2;
     const peak2 = simState.stats.peakWait.C3;
-    const areaWait1 = Math.max(20, Math.ceil(peak1 * unitAreas.wait * 1.2)); // Min 20, 1.2 buffer
-    const areaWait2 = Math.max(10, Math.ceil(peak2 * unitAreas.wait * 1.5)); // Wider buffer for corridors
+    const areaWait1 = Math.max(20, Math.ceil(peak1 * unitAreas.wait * 1.2)); 
+    const areaWait2 = Math.max(10, Math.ceil(peak2 * unitAreas.wait * 1.5)); 
     
     const medTotal = areaReg + areaNurse + areaDoc + areaExam;
     const waitTotal = areaWait1 + areaWait2;
-    const circTotal = Math.ceil((medTotal + waitTotal) * 0.35); // 35% circulation factor
+    const circTotal = Math.ceil((medTotal + waitTotal) * 0.35); 
 
-    // DOM Update
-    document.getElementById('total_area').innerText = medTotal + waitTotal + circTotal;
-    
+    const totalArea = medTotal + waitTotal + circTotal;
+
+    document.getElementById('total_area').innerText = totalArea;
     document.getElementById('txt_reg_count').innerText = counts.reg;
     document.getElementById('val_reg_area').innerText = areaReg;
-    
     document.getElementById('val_nurse_area').innerText = areaNurse;
-    
     document.getElementById('val_wait1_peak').innerText = peak1;
     document.getElementById('val_wait1_area').innerText = areaWait1;
-    
     document.getElementById('val_wait2_peak').innerText = peak2;
     document.getElementById('val_wait2_area').innerText = areaWait2;
-    
     document.getElementById('txt_doc_count').innerText = counts.doc;
     document.getElementById('val_doc_area').innerText = areaDoc;
-    
     document.getElementById('txt_exam_count').innerText = counts.exam;
     document.getElementById('val_exam_area').innerText = areaExam;
-    
     document.getElementById('val_circ_area').innerText = circTotal;
 
-    // Bar Chart
-    const total = medTotal + waitTotal + circTotal || 1;
-    document.getElementById('bar_med').style.width = (medTotal/total*100) + '%';
-    document.getElementById('bar_wait').style.width = (waitTotal/total*100) + '%';
-    document.getElementById('bar_circ').style.width = (circTotal/total*100) + '%';
+    document.getElementById('bar_med').style.width = (medTotal/totalArea*100) + '%';
+    document.getElementById('bar_wait').style.width = (waitTotal/totalArea*100) + '%';
+    document.getElementById('bar_circ').style.width = (circTotal/totalArea*100) + '%';
+
+    // New Efficiency Metrics
+    // Avg Walk Distance
+    let totalDist = 0;
+    let countFinished = simState.finishedPatients.length;
+    simState.finishedPatients.forEach(p => totalDist += p.totalWalkDist);
+    // Add current active patients distance to calculation? Usually stats report completed journeys.
+    // Let's stick to finished for accuracy.
+    const avgDist = countFinished > 0 ? Math.round(totalDist / countFinished) : 0;
+    document.getElementById('val_avg_dist').innerText = avgDist;
+
+    // Area Per Person (Concurrent)
+    // Avoid division by zero
+    const peakConcurrent = Math.max(1, simState.stats.peakConcurrent);
+    const areaPerPerson = (totalArea / peakConcurrent).toFixed(1);
+    document.getElementById('val_area_per_person').innerText = areaPerPerson;
 }
 
 function updateChart() {
@@ -1259,7 +1183,7 @@ function updateChart() {
     chartInstance.update('none');
 }
 
-// ================= CONTROLS & CAMERA =================
+// ... [Controls toggle/changeSpeed/reset/camera/attach] ...
 function toggleSimulation() {
     simState.running = !simState.running;
     lastTime = performance.now();
@@ -1274,11 +1198,9 @@ function toggleSimulation() {
 
 function changeSpeed(val) {
     simState.speed = val;
-    // Reset classes
     [1, 10, 100].forEach(v => {
         document.getElementById('speed'+v).className = "px-3 py-1.5 text-[10px] font-semibold rounded-lg hover:bg-white/60 text-gray-600 transition-all";
     });
-    // Set active
     document.getElementById('speed'+val).className = "px-3 py-1.5 text-[10px] font-bold rounded-lg bg-indigo-100/50 text-indigo-700 transition-all hover:bg-white/60";
 }
 
@@ -1292,11 +1214,12 @@ function resetSimulation() {
 }
 
 function resetCamera(view) {
-    if(view === 'layout') {
-        cameraLayout = { x: 0, y: 0, scale: 1, isDragging: false, startX: 0, startY: 0 };
-    } else {
-        cameraGraph = { x: 0, y: 0, scale: 1, isDragging: false, startX: 0, startY: 0 };
-    }
+    // FIX: Mutate existing object instead of reassigning
+    const target = view === 'layout' ? cameraLayout : cameraGraph;
+    target.x = 0;
+    target.y = 0;
+    target.scale = 1;
+    target.isDragging = false;
 }
 
 function switchView(v) {
@@ -1342,7 +1265,6 @@ function togglePanel(side) {
     setTimeout(resize, 450);
 }
 
-// Unified Camera Logic
 function attachCameraControl(elementId, cameraObj) {
     const el = document.getElementById(elementId);
     
@@ -1376,11 +1298,9 @@ function attachCameraControl(elementId, cameraObj) {
     });
 }
 
-// Attach listeners
 attachCameraControl('layoutWrapper', cameraLayout);
 attachCameraControl('graphWrapper', cameraGraph);
 
-// Boot
 initChart();
 initSim();
 resize();
