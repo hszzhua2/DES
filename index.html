@@ -280,7 +280,7 @@
                        <span class="text-gray-600">→</span> 轴向(时间)
                     </div>
                     <div class="bg-white/80 backdrop-blur px-3 py-1.5 rounded-full text-[10px] font-bold text-gray-500 border border-white shadow-sm flex items-center gap-2">
-                       <div class="w-2 h-2 bg-red-400 rounded-sm"></div> 拥堵热力
+                       <div class="w-2 h-2 bg-red-400 rounded-sm"></div> 拥堵热力(人均排队>20红警)
                        <div class="w-6 h-0.5 bg-gray-800"></div> 患者轨迹(抽样)
                     </div>
                 </div>
@@ -416,6 +416,8 @@ let currentView = 'layout'; // 'layout' or 'graph'
 // ---------------- 仿真数据结构 ----------------
 function initSimulationData() {
     const dailyFlow = parseInt(document.getElementById('dailyFlow').value);
+    // Hourly flow rate calculation: Daily / 8 hours
+    const hourlyFlow = dailyFlow / 8;
     
     // Read Physical Inputs
     const distInputs = {
@@ -434,7 +436,7 @@ function initSimulationData() {
         paused: false,
         speed: 1,
         time: 0,
-        arrivalRate: dailyFlow / 480, // per minute
+        arrivalRate: hourlyFlow / 60, // patients per minute based on hourly flow
         patients: [],
         distances: distInputs,
         totalPathLen: totalPathLen,
@@ -965,15 +967,31 @@ function drawTimeSpace() {
         // Draw Heatmap Strip Background
         // Data mapping: Time (x) -> Color
         const data = simulation.graphData.nodeLoad[lane];
+        
+        // Get Resource Capacity for Warning Threshold
+        let capacity = 1;
+        let isQueue = true; // True for waiting queues, False for occupancy
+        if(lane === 'REGISTRATION') { capacity = simulation.resources.REGISTRATION.capacity; }
+        else if(lane === 'PHARMACY') { capacity = simulation.resources.PHARMACY.capacity; }
+        else if(lane === 'WAITING') { capacity = simulation.resources.CONSULTATION.capacity; } // Waiting uses doc capacity
+        else if(lane === 'CONSULTATION') { capacity = simulation.resources.CONSULTATION.capacity; isQueue = false; }
+        
+        // Warning Threshold Calculation
+        // If queue: Warning when queue_length > 20 * capacity (i.e. >20 people per window/doctor)
+        // If processing (Consultation): Warning when utilization close to 100%
+        let threshold = isQueue ? (20 * capacity) : capacity; 
+
         if (data && data.length > 0) {
             const timeScale = w / CONFIG.maxTime;
             const blockW = Math.max(1, timeScale);
             
             for (let t = 0; t < data.length; t++) {
                 const load = data[t];
-                // Color Map: Green (0) -> Red (20+)
-                const intensity = Math.min(1, load / 20); 
-                // Simple Heatmap Color
+                // Intensity: 0 (Green) -> 1 (Red)
+                // Normalize load by dynamic threshold
+                const intensity = Math.min(1, load / threshold); 
+                
+                // Heatmap Color
                 const r = Math.floor(255 * intensity);
                 const g = Math.floor(255 * (1 - intensity));
                 const b = 100;
